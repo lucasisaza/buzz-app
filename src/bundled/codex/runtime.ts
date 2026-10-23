@@ -1,7 +1,7 @@
 import type { WorkOutcome } from "../../features/agents/local-activity";
 import { fromOwner, workflowOf } from "../../features/agents/owner-attestation";
 import {
-  type PluginTrigger,
+  type ConversationWake,
   wakeAnchor,
   wakeLands,
 } from "../../features/agent-harness/plugin-wake";
@@ -73,7 +73,8 @@ type Request = {
   settings: Config;
   conversation: Conversation;
   /** A plugin's wake, for which `event` is its local anchor. */
-  wake?: PluginTrigger;
+  wake?: ConversationWake;
+  wakeText?: Delivery["wakeText"];
   /** Latest request's thread, independent of session scope; absent in DMs. */
   toolRoot?: string;
   /** The agent's team sections, if it is on a team. */
@@ -646,13 +647,17 @@ export class CodexRuntime {
   async run(delivery: Delivery) {
     delivery.signal.throwIfAborted();
     const { trigger, agent } = delivery;
-    // Watches and timers come as standalone turns (`runOnce`).
-    if (trigger.type !== "mention" && trigger.type !== "plugin")
+    // Unaddressed watches and timers come as standalone turns (`runOnce`).
+    if (
+      trigger.type !== "mention" &&
+      trigger.type !== "attention" &&
+      trigger.type !== "plugin"
+    )
       return delivery.ignored?.();
     // A plugin's wake is the owner's installed code, not a message to check.
-    const wake = trigger.type === "plugin" ? trigger : undefined;
+    const wake = trigger.type !== "mention" ? trigger : undefined;
     const event =
-      trigger.type === "plugin" ? wakeAnchor(trigger) : trigger.event;
+      trigger.type !== "mention" ? wakeAnchor(trigger) : trigger.event;
     const reads = this.reads(agent.pubkey);
     if (
       trigger.type === "mention" &&
@@ -701,6 +706,7 @@ export class CodexRuntime {
       ...(wake ? { current: delivery.current } : {}),
       event,
       ...(wake ? { wake } : {}),
+      ...(delivery.wakeText ? { wakeText: delivery.wakeText } : {}),
       agent,
       settings,
       ...(toolRoot ? { toolRoot } : {}),
@@ -711,6 +717,7 @@ export class CodexRuntime {
         name: channel?.name ?? channelId,
         ...(root ? { root } : {}),
         ...(topLevel ? { topLevel } : {}),
+        ...(topLevel && !solo ? { threadReplies: true } : {}),
       },
       team: delivery.team ?? "",
       ...(project ? { project: `${project}\n` } : {}),
@@ -783,6 +790,10 @@ export class CodexRuntime {
                 return;
               }
               const context = await this.history(request, entry.abort.signal);
+              const wake = request.wake && {
+                ...request.wake,
+                text: (await request.wakeText?.()) ?? request.wake.text,
+              };
               if (entry.abort.signal.aborted) {
                 request.failActivity("Codex was stopped");
                 return;
@@ -800,7 +811,7 @@ export class CodexRuntime {
                 threadId: active.threadId,
                 expectedTurnId: active.turnId,
                 input: input(
-                  `${context}${request.project ?? ""}${turnInput(request.event, request.conversation, text, true, noteOf(request), request.wake)}`,
+                  `${context}${request.project ?? ""}${turnInput(request.event, request.conversation, text, true, noteOf(request), wake)}`,
                 ),
               });
               active.reply = request;
@@ -1200,7 +1211,10 @@ export class CodexRuntime {
       ? {
           channel: request.conversation.channelId,
           ...(request.toolRoot ? { root: request.toolRoot } : {}),
-          ...(request.conversation.topLevel ? { topLevel: true } : {}),
+          ...(request.conversation.topLevel &&
+          !request.conversation.threadReplies
+            ? { topLevel: true }
+            : {}),
         }
       : {};
     const reply = await callSessionTool(
@@ -1542,6 +1556,10 @@ export class CodexRuntime {
         this.history(request, signal),
         this.core(request.agent.pubkey, signal),
       ]);
+      const wake = request.wake && {
+        ...request.wake,
+        text: (await request.wakeText?.()) ?? request.wake.text,
+      };
       signal.throwIfAborted();
       if (request.current && !request.current()) {
         restoreNotes(request);
@@ -1554,7 +1572,7 @@ export class CodexRuntime {
       const turn = await rpc.request<{ turn: { id: string } }>("turn/start", {
         threadId: active.threadId,
         input: input(
-          `${context}${request.project ?? ""}${turnInput(request.event, request.conversation, text, false, noteOf(request), request.wake)}`,
+          `${context}${request.project ?? ""}${turnInput(request.event, request.conversation, text, false, noteOf(request), wake)}`,
         ),
         model,
         effort,
