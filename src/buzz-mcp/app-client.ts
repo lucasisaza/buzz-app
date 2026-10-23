@@ -4,7 +4,7 @@ import { parseAudienceAuthority } from "../features/sessions/audience-authority"
 // memory is read back through the owner's own session, to whom it is
 // encrypted.
 import type { BuzzClient, Memories } from "./client";
-import type { AgentHandle } from "../features/agents/service";
+import type { AgentHandle, AgentHandoff } from "../features/agents/service";
 import type { HostProcess, HostProcessOptions } from "../features/host/service";
 type Spawn = (id: string, options?: HostProcessOptions) => Promise<HostProcess>;
 
@@ -40,6 +40,7 @@ export function appClient(
     return found;
   };
   const authority = agent.audienceAuthority;
+  const handoff = agent.handoff;
   const authorityCommunity = options.audienceAuthorityCommunity;
   return {
     pubkey: agent.pubkey,
@@ -124,11 +125,14 @@ export function appClient(
         throw new Error("Agent changes are unavailable on this host");
       return agent.updateAgent(input);
     },
-    wake: (wake) => {
-      check();
-      if (!agent.wake) throw new Error("Self-handoff is unavailable here");
-      agent.wake(wake);
-    },
+    ...(handoff
+      ? {
+          handoff: (wake: AgentHandoff) => {
+            check();
+            handoff(wake);
+          },
+        }
+      : {}),
     templates: async () => {
       check();
       return agent.templates();

@@ -687,7 +687,7 @@ export class PiRuntime {
     const entry = this.agents.get(call.agent);
     const client =
       entry?.handle &&
-      appClient(entry.handle, {
+      appClient(withoutHandoff(entry.handle), {
         relayAuthor: this.reads(call.agent)?.relayAuthor?.(),
         audienceAuthorityCommunity: this.reads(
           call.agent,
@@ -1262,6 +1262,10 @@ export class PiRuntime {
 
 /** The conversation key session controls in `place` act on, as `key` makes
  * it: a DM or Solo chat has no root here. */
+/** Pi takes no wakes (`run`), so its tools hand nothing off. */
+const withoutHandoff = ({ handoff: _, ...handle }: AgentHandle): AgentHandle =>
+  handle;
+
 const controlKey = (agent: Agent, place: SessionPlace) =>
   config(agent.config).scope === "channel" || !place.root
     ? place.channelId
