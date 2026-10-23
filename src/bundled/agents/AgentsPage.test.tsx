@@ -275,6 +275,7 @@ function setup(
     find: (pubkey: string) => snapshot.agents.find((a) => a.pubkey === pubkey),
     relay: () => undefined,
     handle: () => undefined,
+    connect: vi.fn(),
     sessionState: () => "unavailable" as const,
     session: vi.fn(async () => {}),
     register: vi.fn(),
