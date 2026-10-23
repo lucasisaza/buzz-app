@@ -439,6 +439,7 @@ export type Trigger =
       watch: import("./attention").SourceWatch;
       plugin: string;
       text: string;
+      classifier?: ClassifierOutcome;
     }>
   | Readonly<{
       type: "timer";
